@@ -1,0 +1,1 @@
+This is a three-user webrtc video chat implementation. The two prominient ways of doing WebRTC are using pure SIP via websocket (SIP/WS) and JavaScript Object Notation via XMLHttpRequest (JSON/XHR). This application is based on the second approach; it uses the Google AppEngine server to run the application.
