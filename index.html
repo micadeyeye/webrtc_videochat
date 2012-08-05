@@ -1,0 +1,538 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="canonical" href="{{ room_link }}"/>
+<meta http-equiv="X-UA-Compatible" content="chrome=1"/>
+<script src="/_ah/channel/jsapi"></script>
+<!-- type="text/javascript">
+  (function() {
+    var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true;
+    po.src = 'https://apis.google.com/js/plusone.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
+  })();
+-->
+<style>
+video {
+  border:5px solid black;
+  width:480px;
+  height:360px;
+}
+#hiddenvid {
+  border:5px solid black;
+  width:120px;
+  height:80px
+}
+button {
+  font: 18px sans-serif;
+  padding: 8px;
+}
+textarea {
+  font-family: monospace;
+  margin: 2px;
+  width:480px;
+  height:64px;
+}
+</style>
+</head>
+<body>
+<video id="vid1" autoplay></video>
+<video id="vid2" autoplay></video>
+<video id="vid3" autoplay></video>
+<video id="hiddenvid" autoplay></video>
+<br>
+<button id="btn1" onclick="start()">Start</button>
+<button id="btn2" onclick="call()">Call</button>
+<button id="btn3" onclick="hangup()">Hang Up</button>
+<br>
+<textarea id="ta1"></textarea>
+<br>
+<textarea id="ta2"></textarea>
+<br>
+<button id="btn4" onclick="imSendMessage()">Send IM</button>
+<script type="text/javascript">
+var vid1 = document.getElementById("vid1");
+var vid2 = document.getElementById("vid2");
+var vid3 = document.getElementById("vid3");
+var hiddenvid = document.getElementById("hiddenvid");
+var ta1 = document.getElementById("ta1");
+var ta2 = document.getElementById("ta2");
+btn1.disabled = false;
+btn2.disabled = true;
+btn3.disabled = true;
+
+var localStream;
+var channel;
+var anotherchannel;
+var channelReady = false;
+var pc;
+var msgString;
+var anotherpc;
+var socket;
+var anothersocket;
+var stream;
+var no_of_occupants = {{ no_of_occupants }};
+var initiator = {{ initiator }};
+var started = false;
+
+/*
+ 
+   setInterval((function(){
+			msgString = '?occupants=0'
+			path = '/';
+    		var xhr2 = new XMLHttpRequest();
+    		xhr2.open('GET', path, true);
+    		xhr2.send(msgString);
+			no_of_occupants = {{ no_of_occupants }};
+			})(), 100);
+*/
+
+  (function() {
+	console.log("Initializing; room={{ room_key }}.");
+    resetStatus();
+    openChannel();
+    openAnotherChannel();
+    getUserMedia();
+  })();
+
+  function openChannel() {
+    console.log("Opening channel 1.");
+    alert(no_of_occupants);
+    //if(no_of_occupants < 3){
+    var channel = new goog.appengine.Channel('{{ token }}');
+    //}else{
+    //var anotherchannel = new goog.appengine.Channel('{{ second_token }}');
+    //}
+    var handler = {
+      'onopen': onChannelOpened,
+      'onmessage': onChannelMessage,
+      'onerror': onChannelError,
+      'onclose': onChannelClosed
+    };
+    socket = channel.open(handler);
+  }
+  function openAnotherChannel() {
+	    console.log("Opening channel 2.");
+	    alert(no_of_occupants);
+	    //if(no_of_occupants < 3){
+	    //var channel = new goog.appengine.Channel('{{ token }}');
+	    //}else{
+	    var anotherchannel = new goog.appengine.Channel('{{ second_token }}');
+	    //}
+	    ta2.value = "The other room for a third user is: " + " {{ other_room_no }} ";
+	    var handler = {
+	      'onopen': onAnotherChannelOpened,
+	      'onmessage': onAnotherChannelMessage,
+	      'onerror': onChannelError,
+	      'onclose': onChannelClosed
+	    };
+	    anothersocket = anotherchannel.open(handler);
+	  }
+
+  function resetStatus() {
+    if (!initiator) {
+      setStatus("Waiting for someone to join: <a href=\"{{ room_link }}\">{{ room_link }}</a>");
+    } else {
+      setStatus("Initializing for channel 1...");
+    }
+  }
+
+  function getUserMedia() {
+    try {
+      navigator.webkitGetUserMedia({audio:true, video:true}, onUserMediaSuccess,
+                                   onUserMediaError);
+      console.log("Requested access to local media with new syntax.");
+    } catch (e) {
+      try {
+        navigator.webkitGetUserMedia("video,audio", onUserMediaSuccess,
+                                     onUserMediaError);
+        console.log("Requested access to local media with old syntax.");
+      } catch (e) {
+        alert("webkitGetUserMedia() failed. Is the MediaStream flag enabled in about:flags?");
+        console.log("webkitGetUserMedia failed with exception: " + e.message);
+      }
+    }
+  }
+
+  function createPeerConnection() {
+	  if(no_of_occupants == 1 || no_of_occupants == 2){
+	  try {
+      pc = new webkitPeerConnection00("{{ pc_config }}", onIceCandidate);
+      console.log("Created webkitPeerConnnection00 with config \"{{ pc_config }}\".");
+      btn2.disabled = true;
+      btn3.disabled = false;
+    } catch (e) {
+      console.log("Failed to create PeerConnection, exception: " + e.message);
+      alert("Cannot create PeerConnection object; Is the 'PeerConnection' flag enabled in about:flags?");
+      return;
+    }
+
+    pc.onconnecting = onSessionConnecting;
+    pc.onopen = onSessionOpened;
+    pc.onaddstream = onRemoteStreamAdded;
+    pc.onremovestream = onRemoteStreamRemoved;
+	  }else{
+	try {
+	   anotherpc = new webkitPeerConnection00("{{ pc_config }}", onAnotherIceCandidate);
+	   console.log("Created webkitPeerConnnection00 with config \"{{ pc_config }}\".");
+	   btn2.disabled = true;
+	   btn3.disabled = false;
+	  } catch (e) {
+	   console.log("Failed to create PeerConnection, exception: " + e.message);
+	   alert("Cannot create PeerConnection object; Is the 'PeerConnection' flag enabled in about:flags?");
+	   return;
+		    }
+
+	  anotherpc.onconnecting = onSessionConnecting;
+	  anotherpc.onopen = onSessionOpened;
+	  anotherpc.onaddstream = onRemoteStreamAdded;
+	  anotherpc.onremovestream = onRemoteStreamRemoved;		  
+	  }
+  }
+
+  function maybeStart() {
+    if (!started && localStream && channelReady) {
+      setStatus("Connecting...");
+      console.log("Creating PeerConnection for channel 1.");
+      createPeerConnection();
+      console.log("Adding local stream for channel 1.");
+      if(no_of_occupants == 1 || no_of_occupants == 2){
+      pc.addStream(localStream);
+      }else{
+      anotherpc.addStream(localStream);
+      }
+      started = true;
+	  btn2.disabled = false;
+      // Caller initiates offer to peer.
+      if (initiator)
+        doCall();
+    }
+  }
+
+  function setStatus(state) {
+    ta1.innerHTML = state;
+  }
+
+  function doCall() {
+	  if(no_of_occupants == 1 || no_of_occupants == 2){
+    console.log("Send offer to peer for channel 1");
+    var offer = pc.createOffer({audio:true, video:true});
+    pc.setLocalDescription(pc.SDP_OFFER, offer);
+    sendMessage({type: 'offer', sdp: offer.toSdp()});
+    pc.startIce();
+	}else{
+	console.log("Send offer to peer for channel 1");
+	var offer = anotherpc.createOffer({audio:true, video:true});
+	anotherpc.setLocalDescription(anotherpc.SDP_OFFER, offer);
+	sendMessage({type: 'offer', sdp: offer.toSdp()});
+	anotherpc.startIce();
+	
+	}
+  }
+
+  function doAnswer() {
+    console.log("Send answer to peer for channel 1");
+    //Swap remote description and answers
+  	if((no_of_occupants >= 2) &&(anotherpc.remoteDescription != null)){
+  		var offer = anotherpc.remoteDescription;
+  	    var answer = anotherpc.createAnswer(offer.toSdp(), {audio:true,video:true});
+  	    anotherpc.setLocalDescription(anotherpc.SDP_ANSWER, answer);
+  	    sendMessage({type: 'answer', sdp: answer.toSdp()});
+  	    anotherpc.startIce();
+  	}
+    else if(no_of_occupants <= 2){
+  		var offer = pc.remoteDescription;
+  	    var answer = pc.createAnswer(offer.toSdp(), {audio:true,video:true});
+  	    pc.setLocalDescription(pc.SDP_ANSWER, answer);
+  	    sendMessage({type: 'answer', sdp: answer.toSdp()});
+  	    pc.startIce();
+  	}
+  	//close of swap
+  	/*
+    var offer = pc.remoteDescription;
+    var answer = pc.createAnswer(offer.toSdp(), {audio:true,video:true});
+    pc.setLocalDescription(pc.SDP_ANSWER, answer);
+    sendMessage({type: 'answer', sdp: answer.toSdp()});
+    pc.startIce();
+    */
+  }
+
+  function sendMessage(message) {
+    var msgString = JSON.stringify(message);
+    console.log('C->S: ' + msgString);
+    path = '/message?r={{ room_key }}' + '&u={{ me }}';
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', path, true);
+    xhr.send(msgString);
+  }
+
+  function processSignalingMessage(message) {
+    var msg = JSON.parse(message);
+
+    if (msg.type === 'offer') {
+      // Callee creates PeerConnection
+      if (!initiator && !started)
+        maybeStart();
+
+    //Swap SDPs when no_of_occupants > 2
+  	if((no_of_occupants >= 2) &&(anotherpc.SDP_OFFER != undefined)){
+  		anotherpc.setLocalDescription(anotherpc.SDP_OFFER, new SessionDescription(msg.sdp));
+
+  	}else if(no_of_occupants == 1){
+  		pc.setLocalDescription(pc.SDP_OFFER, new SessionDescription(msg.sdp));
+  	}
+  	//close of swap
+    doAnswer();
+    } else if (msg.type === 'answer' && started) {
+    	//Swap SDPs when no_of_occupants > 2
+    	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
+      anotherpc.setRemoteDescription(anotherpc.SDP_ANSWER, new SessionDescription(msg.sdp));
+    	}else{
+      pc.setRemoteDescription(pc.SDP_ANSWER, new SessionDescription(msg.sdp));
+    	}
+    	//close of swap
+    } else if (msg.type === 'candidate' && started) {
+    	 var candidate = new IceCandidate(msg.label, msg.candidate);
+    	//Swap SDPs when no_of_occupants > 2
+    	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
+      anotherpc.processIceMessage(candidate);
+    	}else{
+    		pc.processIceMessage(candidate);
+    	}
+    	//close of swap
+      /*
+      var candidate = new IceCandidate(msg.label, msg.candidate);
+      pc.processIceMessage(candidate);
+      */
+    } else if (msg.type === 'bye' && started) {
+      onRemoteHangup();
+    }
+  }
+
+  function processAnotherSignalingMessage(message) {
+	    var msg = JSON.parse(message);
+
+	    if (msg.type === 'offer') {
+	      // Callee creates PeerConnection
+	      if (!initiator && !started)
+	        maybeStart();
+
+	    //Swap SDPs when no_of_occupants > 2
+	  	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
+	  		anotherpc.setRemoteDescription(anotherpc.SDP_OFFER, new SessionDescription(msg.sdp));
+
+	  	}else{
+	  		pc.setRemoteDescription(pc.SDP_OFFER, new SessionDescription(msg.sdp));
+	  	}
+	  	//close of swap
+	    doAnswer();
+	    } else if (msg.type === 'answer' && started) {
+	    	//Swap SDPs when no_of_occupants > 2
+	    	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
+	      anotherpc.setRemoteDescription(anotherpc.SDP_ANSWER, new SessionDescription(msg.sdp));
+	    	}else{
+	      pc.setRemoteDescription(pc.SDP_ANSWER, new SessionDescription(msg.sdp));
+	    	}
+	    	//close of swap
+	    } else if (msg.type === 'candidate' && started) {
+	    	 var candidate = new IceCandidate(msg.label, msg.candidate);
+	    	//Swap SDPs when no_of_occupants > 2
+	    	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
+	      anotherpc.processIceMessage(candidate);
+	    	}else{
+	    		pc.processIceMessage(candidate);
+	    	}
+	    	//close of swap
+	      /*
+	      var candidate = new IceCandidate(msg.label, msg.candidate);
+	      pc.processIceMessage(candidate);
+	      */
+	    } else if (msg.type === 'bye' && started) {
+	      onRemoteHangup();
+	    }
+	  }
+
+
+  
+  function onChannelOpened() {
+    console.log('Channel opened for channel 1.');
+    channelReady = true;
+    if (initiator) maybeStart();
+  }
+  function onChannelMessage(message) {
+    console.log('S->C: ' + message.data);
+    processSignalingMessage(message.data);
+    imReceiveMessage(message.data);
+  }
+  function onAnotherChannelOpened() {
+	    console.log('Channel opened for channel 2.');
+	    channelReady = true;
+	    if (initiator) maybeStart();
+	  }
+  function onAnotherChannelMessage(message) {
+	    console.log('S->C: ' + message.data);
+	    processAnotherSignalingMessage(message.data);
+	    imReceiveMessage(message.data);
+	  }
+  function onChannelError() {
+    console.log('Channel error for channel 1.');
+  }
+  function onChannelClosed() {
+    console.log('Channel closed for channel 1.');
+  }
+
+  function onUserMediaSuccess(stream) {
+    console.log("User has granted access to local media for channel 1.");
+    btn1.disabled = true;
+    btn2.disabled = true;
+    var url = webkitURL.createObjectURL(stream);
+    vid1.src = url;
+    localStream = stream;
+    // Caller creates PeerConnection.
+    if (initiator) maybeStart();
+  }
+  function onUserMediaError(error) {
+    console.log("Failed to get access to local media. Error code was " + error.code + "for channel 1");
+    alert("Failed to get access to local media. Error code was " + error.code + "for channel 1.");
+  }
+  function onIceCandidate(candidate, moreToFollow) {
+	    if (candidate) {
+	        sendMessage({type: 'candidate',
+	                     label: candidate.label, candidate: candidate.toSdp()});
+	    }
+
+	    if (!moreToFollow) {
+	      console.log("End of candidates for channel 1.");
+	    }
+	  }
+  
+  function onAnotherIceCandidate(candidate, moreToFollow) {
+	    if (candidate) {
+	        sendMessage({type: 'candidate',
+	                     label: candidate.label, candidate: candidate.toSdp()});
+	    }
+
+	    if (!moreToFollow) {
+	      console.log("End of candidates for channel 1.");
+	    }
+	  }
+
+  
+  /* default ice setting
+  function onIceCandidate(candidate, moreToFollow) {
+    if (candidate) {
+        sendMessage({type: 'candidate',
+                     label: candidate.label, candidate: candidate.toSdp()});
+    }
+
+    if (!moreToFollow) {
+      console.log("End of candidates for channel 1.");
+    }
+  }
+
+*/
+  function onSessionConnecting(message) {
+    console.log("Session connecting for channel 1.");
+  }
+  function onSessionOpened(message) {
+    console.log("Session opened for channel 1.");
+  }
+
+  function onRemoteStreamAdded(event) {
+	  if(no_of_occupants >= 2){  
+    console.log("Remote stream added for channel 1.");
+    var url = webkitURL.createObjectURL(event.stream);
+    vid2.src = url;
+    //waitForRemoteVideo();
+	  }else{
+	console.log("Remote stream added for channel 2.");
+	var url = webkitURL.createObjectURL(event.stream);
+    vid3.src = url;
+	//waitForRemoteVideo();	  
+	  }
+  }
+  function onRemoteStreamRemoved(event) {
+    console.log("Remote stream removed for channel 1.");
+  }
+
+  function onHangup() {
+    console.log("Hanging up for channel 1.");
+    started = false;    // Stop processing any message
+    //transitionToDone();
+    pc.close();
+    // will trigger BYE from server
+    socket.close();
+    pc = null;
+    //socket = null;
+  }
+   
+  function onRemoteHangup() {
+    console.log('Session terminated for channel 1.');
+    started = false;    // Stop processing any message
+    //transitionToWaiting();
+    pc.close();
+    pc = null;
+    initiator = 0;
+    btn3.disabled = true;
+    btn2.disabled = false;
+  }
+
+  function waitForRemoteVideo() {
+    if (vid2.currentTime > 0) {
+      //transitionToActive();
+    } else {
+      setTimeout(waitForRemoteVideo, 100);
+    }
+  }
+ /* 
+function transitionToActive() {
+    remoteVideo.style.opacity = 1;
+    card.style.webkitTransform = "rotateY(180deg)";
+    setTimeout(function() { localVideo.src = ""; }, 500);
+    setTimeout(function() { miniVideo.style.opacity = 1; }, 1000);
+    setStatus("<input type=\"button\" id=\"hangup\" value=\"Hang up\" onclick=\"onHangup()\" />"); }
+*/
+/*
+  function transitionToWaiting() {
+    card.style.webkitTransform = "rotateY(0deg)";
+    setTimeout(function() { localVideo.src = miniVideo.src; miniVideo.src = ""; remoteVideo.src = "" }, 500);
+    miniVideo.style.opacity = 0;
+    remoteVideo.style.opacity = 0;
+    resetStatus();
+  }
+  function transitionToDone() {
+    localVideo.style.opacity = 0;
+    remoteVideo.style.opacity = 0;
+    miniVideo.style.opacity = 0;
+    setStatus("You have left the call. <a href=\"{{ room_link }}\">Click here</a> to rejoin.");
+  }
+  function enterFullScreen() {
+    remote.webkitRequestFullScreen();
+  }
+*/
+  
+
+  function imSendMessage() {
+    var message = new FormData();
+    message.append('ta2', '&lt;im&gt;' + ta2.value + '&lt;\im&gt;');
+    //var message = ta2.value; 
+    var msgString = message;
+    //var msgString = JSON.stringify(message);
+    console.log('C->S: ' + msgString);
+    path = '/imsendmessage?r={{ room_key }}' + '&u={{ me }}';
+    var xhr = new XMLHttpRequest();
+    //xhr.responseType = 'text';
+    xhr.open('POST', path, true);
+    xhr.send(msgString);
+  }
+  
+  function imReceiveMessage(message) {
+  message = message.substr(4, -5);
+  ta2.value = message;
+  };
+
+  
+</script>
+
+
+</body>
+</html>
