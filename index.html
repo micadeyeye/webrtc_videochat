@@ -1,26 +1,15 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!DOCTYPE html>
 <html>
 <head>
+<title>PeerConnection Demo 1</title>
 <link rel="canonical" href="{{ room_link }}"/>
 <meta http-equiv="X-UA-Compatible" content="chrome=1"/>
 <script src="/_ah/channel/jsapi"></script>
-<!-- type="text/javascript">
-  (function() {
-    var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true;
-    po.src = 'https://apis.google.com/js/plusone.js';
-    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
-  })();
--->
 <style>
 video {
   border:5px solid black;
   width:480px;
   height:360px;
-}
-#hiddenvid {
-  border:5px solid black;
-  width:120px;
-  height:80px
 }
 button {
   font: 18px sans-serif;
@@ -30,7 +19,7 @@ textarea {
   font-family: monospace;
   margin: 2px;
   width:480px;
-  height:64px;
+  height:640px;
 }
 </style>
 </head>
@@ -38,70 +27,48 @@ textarea {
 <video id="vid1" autoplay></video>
 <video id="vid2" autoplay></video>
 <video id="vid3" autoplay></video>
-<video id="hiddenvid" autoplay></video>
+<video id="vid4" autoplay></video>
 <br>
 <button id="btn1" onclick="start()">Start</button>
 <button id="btn2" onclick="call()">Call</button>
+<button id="btn4" onclick="addUser()">Add Third User</button>
 <button id="btn3" onclick="hangup()">Hang Up</button>
 <br>
-<textarea id="ta1"></textarea>
-<br>
-<textarea id="ta2"></textarea>
-<br>
-<button id="btn4" onclick="imSendMessage()">Send IM</button>
-<script type="text/javascript">
-var vid1 = document.getElementById("vid1");
-var vid2 = document.getElementById("vid2");
-var vid3 = document.getElementById("vid3");
-var hiddenvid = document.getElementById("hiddenvid");
-var ta1 = document.getElementById("ta1");
-var ta2 = document.getElementById("ta2");
+<script>
+
 btn1.disabled = false;
 btn2.disabled = true;
 btn3.disabled = true;
-
-var localStream;
+var pc1_local, pc1_remote;
+var localstream;
 var channel;
-var anotherchannel;
 var channelReady = false;
-var pc;
+var pc_local;
+var pc_remote;
+var prefix;
 var msgString;
-var anotherpc;
 var socket;
-var anothersocket;
 var stream;
-var no_of_occupants = {{ no_of_occupants }};
+var initialSDP_ANSWER;
+var no_of_occupant = {{ no_of_occupant }};
 var initiator = {{ initiator }};
 var started = false;
+var thirdUserFlag = false;
+var runbefore = false;
+//for the third user
+var pc2_local, pc2_remote;
 
-/*
- 
-   setInterval((function(){
-			msgString = '?occupants=0'
-			path = '/';
-    		var xhr2 = new XMLHttpRequest();
-    		xhr2.open('GET', path, true);
-    		xhr2.send(msgString);
-			no_of_occupants = {{ no_of_occupants }};
-			})(), 100);
-*/
 
-  (function() {
+(function() {
 	console.log("Initializing; room={{ room_key }}.");
-    resetStatus();
     openChannel();
-    openAnotherChannel();
     getUserMedia();
   })();
 
   function openChannel() {
     console.log("Opening channel 1.");
-    alert(no_of_occupants);
-    //if(no_of_occupants < 3){
+    alert(no_of_occupant);
     var channel = new goog.appengine.Channel('{{ token }}');
-    //}else{
-    //var anotherchannel = new goog.appengine.Channel('{{ second_token }}');
-    //}
     var handler = {
       'onopen': onChannelOpened,
       'onmessage': onChannelMessage,
@@ -110,153 +77,89 @@ var started = false;
     };
     socket = channel.open(handler);
   }
-  function openAnotherChannel() {
-	    console.log("Opening channel 2.");
-	    alert(no_of_occupants);
-	    //if(no_of_occupants < 3){
-	    //var channel = new goog.appengine.Channel('{{ token }}');
-	    //}else{
-	    var anotherchannel = new goog.appengine.Channel('{{ second_token }}');
-	    //}
-	    ta2.value = "The other room for a third user is: " + " {{ other_room_no }} ";
-	    var handler = {
-	      'onopen': onAnotherChannelOpened,
-	      'onmessage': onAnotherChannelMessage,
-	      'onerror': onChannelError,
-	      'onclose': onChannelClosed
-	    };
-	    anothersocket = anotherchannel.open(handler);
-	  }
 
-  function resetStatus() {
-    if (!initiator) {
-      setStatus("Waiting for someone to join: <a href=\"{{ room_link }}\">{{ room_link }}</a>");
-    } else {
-      setStatus("Initializing for channel 1...");
-    }
+
+
+function trace(text) {
+  // This function is used for logging.
+  if (text[text.length - 1] == '\n') {
+    text = text.substring(0, text.length - 1);
+  }
+  console.log((performance.webkitNow() / 1000).toFixed(3) + ": " + text);
+}
+
+function gotStream(stream){
+  trace("Received local stream");
+  vid1.src = webkitURL.createObjectURL(stream);
+  localstream = stream;
+  btn2.disabled = false;
+  if (initiator){ 
+	  call();}
+}
+
+function getUserMedia() {
+  trace("Requesting local stream");
+  btn1.disabled = true;
+  navigator.webkitGetUserMedia({audio:true, video:true},
+                               gotStream, onUserMediaError);
+}  
+  
+function onUserMediaError(error) {
+    console.log("Failed to get access to local media. Error code was " + error.code + "for channel 1");
+    alert("Failed to get access to local media. Error code was " + error.code + "for channel 1.");
   }
 
-  function getUserMedia() {
-    try {
-      navigator.webkitGetUserMedia({audio:true, video:true}, onUserMediaSuccess,
-                                   onUserMediaError);
-      console.log("Requested access to local media with new syntax.");
-    } catch (e) {
-      try {
-        navigator.webkitGetUserMedia("video,audio", onUserMediaSuccess,
-                                     onUserMediaError);
-        console.log("Requested access to local media with old syntax.");
-      } catch (e) {
-        alert("webkitGetUserMedia() failed. Is the MediaStream flag enabled in about:flags?");
-        console.log("webkitGetUserMedia failed with exception: " + e.message);
-      }
-    }
-  }
-
-  function createPeerConnection() {
-	  if(no_of_occupants == 1 || no_of_occupants == 2){
-	  try {
-      pc = new webkitPeerConnection00("{{ pc_config }}", onIceCandidate);
-      console.log("Created webkitPeerConnnection00 with config \"{{ pc_config }}\".");
-      btn2.disabled = true;
-      btn3.disabled = false;
-    } catch (e) {
-      console.log("Failed to create PeerConnection, exception: " + e.message);
-      alert("Cannot create PeerConnection object; Is the 'PeerConnection' flag enabled in about:flags?");
-      return;
-    }
-
-    pc.onconnecting = onSessionConnecting;
-    pc.onopen = onSessionOpened;
-    pc.onaddstream = onRemoteStreamAdded;
-    pc.onremovestream = onRemoteStreamRemoved;
-	  }else{
-	try {
-	   anotherpc = new webkitPeerConnection00("{{ pc_config }}", onAnotherIceCandidate);
-	   console.log("Created webkitPeerConnnection00 with config \"{{ pc_config }}\".");
-	   btn2.disabled = true;
-	   btn3.disabled = false;
-	  } catch (e) {
-	   console.log("Failed to create PeerConnection, exception: " + e.message);
-	   alert("Cannot create PeerConnection object; Is the 'PeerConnection' flag enabled in about:flags?");
-	   return;
-		    }
-
-	  anotherpc.onconnecting = onSessionConnecting;
-	  anotherpc.onopen = onSessionOpened;
-	  anotherpc.onaddstream = onRemoteStreamAdded;
-	  anotherpc.onremovestream = onRemoteStreamRemoved;		  
-	  }
-  }
-
-  function maybeStart() {
-    if (!started && localStream && channelReady) {
-      setStatus("Connecting...");
-      console.log("Creating PeerConnection for channel 1.");
-      createPeerConnection();
-      console.log("Adding local stream for channel 1.");
-      if(no_of_occupants == 1 || no_of_occupants == 2){
-      pc.addStream(localStream);
-      }else{
-      anotherpc.addStream(localStream);
-      }
-      started = true;
-	  btn2.disabled = false;
-      // Caller initiates offer to peer.
-      if (initiator)
-        doCall();
-    }
-  }
-
-  function setStatus(state) {
-    ta1.innerHTML = state;
-  }
-
-  function doCall() {
-	  if(no_of_occupants == 1 || no_of_occupants == 2){
-    console.log("Send offer to peer for channel 1");
-    var offer = pc.createOffer({audio:true, video:true});
-    pc.setLocalDescription(pc.SDP_OFFER, offer);
-    sendMessage({type: 'offer', sdp: offer.toSdp()});
-    pc.startIce();
-	}else{
-	console.log("Send offer to peer for channel 1");
-	var offer = anotherpc.createOffer({audio:true, video:true});
-	anotherpc.setLocalDescription(anotherpc.SDP_OFFER, offer);
-	sendMessage({type: 'offer', sdp: offer.toSdp()});
-	anotherpc.startIce();
+function call() {
+	if(!(no_of_occupant == 3)){
+  btn2.disabled = true;
+  btn3.disabled = false;
+  trace("Starting calls");
+  //if (localstream.videoTracks.length > 0)
+  //  trace("Using Video device: " + localstream.videoTracks[0].label);  
+  //if (localstream.audioTracks.length > 0)
+  //  trace("Using Audio device: " + localstream.audioTracks[0].label);
+ try {
+  pc1_local = new webkitPeerConnection00("{{ pc_config }}", iceCallback1Local);
+  pc1_remote = new webkitPeerConnection00("{{ pc_config }}", iceCallback1Remote);
+  trace("PC1: created local and remote peer connection objects"); 
+   } catch (e) {
+     console.log("Failed to create PeerConnection, exception: " + e.message);
+     alert("Cannot create PeerConnection object; Is the 'PeerConnection' flag enabled in about:flags?");
+     return;
+   }
+   
+    pc1_local.onaddstream = gotRemoteStream1; 
+	pc1_local.onconnecting = onSessionConnecting;
+	pc1_local.onopen = onSessionOpened;
+    pc1_local.onremovestream = onRemoteStreamRemoved;
 	
-	}
-  }
+    pc1_remote.onaddstream = gotRemoteStream1; 
+	pc1_remote.onconnecting = onSessionConnecting;
+	pc1_remote.onopen = onSessionOpened;
+    pc1_remote.onremovestream = onRemoteStreamRemoved;
 
-  function doAnswer() {
-    console.log("Send answer to peer for channel 1");
-    //Swap remote description and answers
-  	if((no_of_occupants >= 2) &&(anotherpc.remoteDescription != null)){
-  		var offer = anotherpc.remoteDescription;
-  	    var answer = anotherpc.createAnswer(offer.toSdp(), {audio:true,video:true});
-  	    anotherpc.setLocalDescription(anotherpc.SDP_ANSWER, answer);
-  	    sendMessage({type: 'answer', sdp: answer.toSdp()});
-  	    anotherpc.startIce();
-  	}
-    else if(no_of_occupants <= 2){
-  		var offer = pc.remoteDescription;
-  	    var answer = pc.createAnswer(offer.toSdp(), {audio:true,video:true});
-  	    pc.setLocalDescription(pc.SDP_ANSWER, answer);
-  	    sendMessage({type: 'answer', sdp: answer.toSdp()});
-  	    pc.startIce();
-  	}
-  	//close of swap
-  	/*
-    var offer = pc.remoteDescription;
-    var answer = pc.createAnswer(offer.toSdp(), {audio:true,video:true});
-    pc.setLocalDescription(pc.SDP_ANSWER, answer);
-    sendMessage({type: 'answer', sdp: answer.toSdp()});
-    pc.startIce();
-    */
-  }
+    
+    signal(pc1_local, pc1_remote, "PC1: ");
+	}//close of check for third user
+}
 
-  function sendMessage(message) {
+function signal(pc_local, pc_remote, prefix) {	
+  started = true;
+  //send off from other user
+  pc_local.addStream(localstream);
+  pc_remote.addStream(localstream);
+  trace(prefix + "Adding local stream to peer connection");
+	if ((initiator && getThirdUserFlag && !runbefore) || (no_of_occupant == 3 && !getThirdUserFlag)){
+	// ((initiator && getThirdUserFlag) || (no_of_occupant == 3 && !getThirdUserFlag)){
+  offer = pc_local.createOffer({audio:true, video:true});
+  trace(prefix + "Created offer:\n" + offer.toSdp());
+  pc_local.setLocalDescription(pc_local.SDP_OFFER, offer);
+  sendMessage({type: 'offer', sdp: offer.toSdp()});
+  pc_local.startIce();
+  	}
+}
+
+function sendMessage(message) {
     var msgString = JSON.stringify(message);
     console.log('C->S: ' + msgString);
     path = '/message?r={{ room_key }}' + '&u={{ me }}';
@@ -266,273 +169,463 @@ var started = false;
   }
 
   function processSignalingMessage(message) {
-    var msg = JSON.parse(message);
-
-    if (msg.type === 'offer') {
-      // Callee creates PeerConnection
-      if (!initiator && !started)
-        maybeStart();
-
-    //Swap SDPs when no_of_occupants > 2
-  	if((no_of_occupants >= 2) &&(anotherpc.SDP_OFFER != undefined)){
-  		anotherpc.setLocalDescription(anotherpc.SDP_OFFER, new SessionDescription(msg.sdp));
-
-  	}else if(no_of_occupants == 1){
-  		pc.setLocalDescription(pc.SDP_OFFER, new SessionDescription(msg.sdp));
-  	}
-  	//close of swap
-    doAnswer();
-    } else if (msg.type === 'answer' && started) {
-    	//Swap SDPs when no_of_occupants > 2
-    	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
-      anotherpc.setRemoteDescription(anotherpc.SDP_ANSWER, new SessionDescription(msg.sdp));
-    	}else{
-      pc.setRemoteDescription(pc.SDP_ANSWER, new SessionDescription(msg.sdp));
-    	}
-    	//close of swap
-    } else if (msg.type === 'candidate' && started) {
-    	 var candidate = new IceCandidate(msg.label, msg.candidate);
-    	//Swap SDPs when no_of_occupants > 2
-    	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
-      anotherpc.processIceMessage(candidate);
-    	}else{
-    		pc.processIceMessage(candidate);
-    	}
-    	//close of swap
-      /*
-      var candidate = new IceCandidate(msg.label, msg.candidate);
-      pc.processIceMessage(candidate);
-      */
-    } else if (msg.type === 'bye' && started) {
-      onRemoteHangup();
-    }
-  }
-
-  function processAnotherSignalingMessage(message) {
+	  
 	    var msg = JSON.parse(message);
 
-	    if (msg.type === 'offer') {
-	      // Callee creates PeerConnection
-	      if (!initiator && !started)
-	        maybeStart();
+    if (msg.type === 'offer') {
+ 
+    	if(no_of_occupant == 1 &&	!getThirdUserFlag()){
+			if(pc2_local == null && pc2_remote == null){
+      // Callee creates PeerConnection
+      if (!initiator && !started){
+    	  	call();}
+	pc1_remote.setRemoteDescription(pc1_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+    doAnswer();
+			}else{
+				{
+				  // Callee creates PeerConnection
+				      if (!initiator && !started){
+				    	  	call();}
+					pc2_remote.setRemoteDescription(pc2_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+				    doAnswer();
+												}
+			}
+   	 }else if(no_of_occupant == 1 && getThirdUserFlag()){
+   		if(pc2_local == null && pc2_remote == null){
+   	      // Callee creates PeerConnection
+   	      if (!initiator && !started){
+   	    	  	call();}
+   		pc1_remote.setRemoteDescription(pc1_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+   	    doAnswer();
+   				}else{
+   					{
+   					  // Callee creates PeerConnection
+   					      if (!initiator && !started){
+   					    	  	call();}
+   						pc2_remote.setRemoteDescription(pc2_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+   					    doAnswer();
+   													}
+   				}
+   	    //close signalling for user 1
+   	 }
+   	 else if(no_of_occupant == 2 &&	!getThirdUserFlag()){
+   		if(pc2_local == null && pc2_remote == null){
+         // Callee creates PeerConnection
+         if (!initiator && !started){
+       	  	call();}
+   	pc1_remote.setRemoteDescription(pc1_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+       doAnswer();
+   		}else{
+   	      // Callee creates PeerConnection
+   	      if (!initiator && !started){
+   	    	  	call();}
+   		pc2_remote.setRemoteDescription(pc2_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+   	    doAnswer();
+   				}
+   	 }else if(no_of_occupant == 2 &&	getThirdUserFlag()){
+    		if(pc2_local == null && pc2_remote == null){
+    	         // Callee creates PeerConnection
+    	         if (!initiator && !started){
+    	       	  	call();}
+    	   	pc1_remote.setRemoteDescription(pc1_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+    	       doAnswer();
+    	   		}else{
+    	   	      // Callee creates PeerConnection
+    	   	      if (!initiator && !started){
+    	   	    	  	call();}
+    	   		pc2_remote.setRemoteDescription(pc2_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+    	   	    doAnswer();
+    	   				}
+    	       //close signalling for user 2
 
-	    //Swap SDPs when no_of_occupants > 2
-	  	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
-	  		anotherpc.setRemoteDescription(anotherpc.SDP_OFFER, new SessionDescription(msg.sdp));
+    	   	 }else if(no_of_occupant == 3 &&	!getThirdUserFlag()){
+   		if(pc2_local == null && pc2_remote == null){
+         // Callee creates PeerConnection
+         if (!initiator && !started){
+       	  	call();}
+   	pc1_remote.setRemoteDescription(pc1_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+       doAnswer();
+   		}else{
+   	      // Callee creates PeerConnection
+   	      if (!initiator && !started){
+   	    	  	call();}
+   		pc2_remote.setRemoteDescription(pc2_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+   	    doAnswer();
+   				}
+   	 }else if(no_of_occupant == 3 &&	getThirdUserFlag()){
+    		if(pc2_local == null && pc2_remote == null){
+    	         // Callee creates PeerConnection
+    	         if (!initiator && !started){
+    	       	  	call();}
+    	   	pc1_remote.setRemoteDescription(pc1_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+    	       doAnswer();
+    	   		}else{
+    	   	      // Callee creates PeerConnection
+    	   	      if (!initiator && !started){
+    	   	    	  	call();}
+    	   		pc2_remote.setRemoteDescription(pc2_remote.SDP_OFFER, new SessionDescription(msg.sdp));
+    	   	    doAnswer();
+    	   				}
+    	       //close signalling for user 3
+    	   	 }
 
-	  	}else{
-	  		pc.setRemoteDescription(pc.SDP_OFFER, new SessionDescription(msg.sdp));
+
+    } else if (msg.type === 'answer' && started) {
+    	if(no_of_occupant == 1 &&	!getThirdUserFlag()){
+       		if(pc2_local == null && pc2_remote == null){
+       pc1_local.setRemoteDescription(pc1_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+	   //initialSDP_ANSWER = pc1_local.SDP_ANSWER;
+		}else{
+       pc2_local.setRemoteDescription(pc2_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+       initialSDP_ANSWER = pc2_local.SDP_ANSWER;
+	       		}
+       						}
+    	else if(no_of_occupant == 1 &&	getThirdUserFlag()){
+       		if(pc2_local == null && pc2_remote == null){
+       	       pc1_local.setRemoteDescription(initialSDP_ANSWER, new SessionDescription(msg.sdp));
+       	       		}else{
+       	       pc2_local.setRemoteDescription(pc2_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+       		       		}
+       	    							}
+       	else if(no_of_occupant == 2 &&	!getThirdUserFlag()){
+       		if(pc2_local == null && pc2_remote == null){
+       pc1_local.setRemoteDescription(pc1_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+       initialSDP_ANSWER = pc1_local.SDP_ANSWER;   		
+       		}else{
+       pc2_local.setRemoteDescription(pc2_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+       //initialSDP_ANSWER = pc2_local.SDP_ANSWER;
+       				}
+       			}
+       	else if(no_of_occupant == 2 &&	getThirdUserFlag()){
+       		if(pc2_local == null && pc2_remote == null){
+       pc1_local.setRemoteDescription(pc1_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+       	       		}else{
+       //pc2_local.setRemoteDescription(initialSDP_ANSWER, new SessionDescription(msg.sdp));
+       		       		}
+       			}
+       	else if(no_of_occupant == 3 &&	!getThirdUserFlag()){
+   			if(pc2_local == null && pc2_remote == null){
+       pc1_local.setRemoteDescription(pc1_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+       		       		}else{
+       pc2_local.setRemoteDescription(pc2_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+       		       		}
+       			}
+       	else if(no_of_occupant == 3 &&	getThirdUserFlag()){
+   			if(pc2_local == null && pc2_remote == null){
+       pc1_local.setRemoteDescription(pc1_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+       		       		}else{
+       //pc2_local.setRemoteDescription(pc2_local.SDP_ANSWER, new SessionDescription(msg.sdp));
+       		       		}
+       			}
+
+    } else if (msg.type === 'candidate' && started) {
+    	
+    	var candidate = new IceCandidate(msg.label, msg.candidate);
+    	//pc.processIceMessage(candidate);
+    	//fix this
+    	if(no_of_occupant == 1 &&	!getThirdUserFlag()){
+    		if(pc2_local == null && pc2_remote == null){
+    	if(pc1_local.remoteDescription != null){
+    		handleCandidate(candidate, pc1_local, "PC1: ", "local");
+    	}else{
+    		handleCandidate(candidate, pc1_remote, "PC1: ", "remote");
+               }
+    													}
+    		else{
+    	   		if(pc2_remote.remoteDescription != null){
+    	        handleCandidate(candidate, pc2_remote, "PC2: ", "remote");		
+    	        }else{
+    	        handleCandidate(candidate, pc2_local, "PC2: ", "local");
+    	            	}
+    	    		}
+    							}
+    	else if(no_of_occupant == 1 &&	getThirdUserFlag()){
+    		if(pc2_local == null && pc2_remote == null){
+    	    	if(pc1_local.remoteDescription != null){
+    	    		handleCandidate(candidate, pc1_local, "PC1: ", "local");
+    	    	}else{
+    	    		handleCandidate(candidate, pc1_remote, "PC1: ", "remote");
+    	               }
+    	    													}
+    		else{
+    	   		if(pc2_remote.remoteDescription != null){
+    	        handleCandidate(candidate, pc2_remote, "PC2: ", "remote");		
+    	        }else{
+    	        handleCandidate(candidate, pc2_local, "PC2: ", "local");
+    	            }
+    	    			}
+    	    							}
+    	else if(no_of_occupant == 2 &&	!getThirdUserFlag()){
+    	if(pc2_local == null && pc2_remote == null){
+        if(pc1_remote.remoteDescription != null){
+        handleCandidate(candidate, pc1_remote, "PC1: ", "remote");		
+        }else{
+        handleCandidate(candidate, pc1_local, "PC1: ", "local");
+            }
+    												}
+    	else{
+   		if(pc2_remote.remoteDescription != null){
+        handleCandidate(candidate, pc2_remote, "PC2: ", "remote");		
+        }else{
+        handleCandidate(candidate, pc2_local, "PC2: ", "local");
+            }
+    						}
+        }
+    	else if(no_of_occupant == 2 &&	getThirdUserFlag()){
+        	if(pc2_local == null && pc2_remote == null){
+            if(pc1_remote.remoteDescription != null){
+            handleCandidate(candidate, pc1_remote, "PC1: ", "remote");		
+            }else{
+            handleCandidate(candidate, pc1_local, "PC1: ", "local");
+                }
+        												}
+        	else{
+       		if(pc2_remote.remoteDescription != null){
+            handleCandidate(candidate, pc2_remote, "PC2: ", "remote");		
+            }else{
+            handleCandidate(candidate, pc2_local, "PC2: ", "local");
+                }
+        		}
+            }
+    	else if(no_of_occupant == 3 &&	!getThirdUserFlag()){
+        	if(pc2_local == null && pc2_remote == null){
+                if(pc1_remote.remoteDescription != null){
+                handleCandidate(candidate, pc1_remote, "PC1: ", "remote");		
+                }else{
+                handleCandidate(candidate, pc1_local, "PC1: ", "local");
+                    }
+            												}
+            	else{
+           		if(pc2_remote.remoteDescription != null){
+                handleCandidate(candidate, pc2_remote, "PC2: ", "remote");		
+                }else{
+                handleCandidate(candidate, pc2_local, "PC2: ", "local");
+                    }
+            						}
+                }
+    	else if(no_of_occupant == 3 &&	getThirdUserFlag()){
+        	if(pc2_local == null && pc2_remote == null){
+                if(pc1_remote.remoteDescription != null){
+                handleCandidate(candidate, pc1_remote, "PC1: ", "remote");		
+                }else{
+                handleCandidate(candidate, pc1_local, "PC1: ", "local");
+                    }
+            												}
+            	else{
+           		if(pc2_remote.remoteDescription != null){
+                handleCandidate(candidate, pc2_remote, "PC2: ", "remote");		
+                }else{
+                handleCandidate(candidate, pc2_local, "PC2: ", "local");
+                    }
+            		}
+                }
+    	
+    } else if (msg.type === 'bye' && started) {
+      hangup();
+    }
+    
+
+  }
+
+  function doAnswer() {
+	    console.log("Send answer to peer for channel 1");
+	    //Swap remote description and answers
+	  	if(pc1_remote.remoteDescription != null){
+	  	  offer = pc1_remote.remoteDescription;
+	  	  var answer = pc1_remote.createAnswer(offer.toSdp(), {audio:true,video:true});
+	  	  trace("PC1 " + "Created answer:\n" + answer.toSdp());
+	  	  pc1_remote.setLocalDescription(pc1_remote.SDP_ANSWER, answer);
+	  	  sendMessage({type: 'answer', sdp: answer.toSdp()});
+	  	  pc1_remote.startIce();
 	  	}
-	  	//close of swap
-	    doAnswer();
-	    } else if (msg.type === 'answer' && started) {
-	    	//Swap SDPs when no_of_occupants > 2
-	    	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
-	      anotherpc.setRemoteDescription(anotherpc.SDP_ANSWER, new SessionDescription(msg.sdp));
-	    	}else{
-	      pc.setRemoteDescription(pc.SDP_ANSWER, new SessionDescription(msg.sdp));
-	    	}
-	    	//close of swap
-	    } else if (msg.type === 'candidate' && started) {
-	    	 var candidate = new IceCandidate(msg.label, msg.candidate);
-	    	//Swap SDPs when no_of_occupants > 2
-	    	if((no_of_occupants >= 2) &&(anotherpc != undefined)){
-	      anotherpc.processIceMessage(candidate);
-	    	}else{
-	    		pc.processIceMessage(candidate);
-	    	}
-	    	//close of swap
-	      /*
-	      var candidate = new IceCandidate(msg.label, msg.candidate);
-	      pc.processIceMessage(candidate);
-	      */
-	    } else if (msg.type === 'bye' && started) {
-	      onRemoteHangup();
+	  	else if(pc2_remote.remoteDescription != null){
+		  	  offer = pc2_remote.remoteDescription;
+		  	  var answer = pc2_remote.createAnswer(offer.toSdp(), {audio:true,video:true});
+		  	  trace("PC2 " + "Created answer:\n" + answer.toSdp());
+		  	  pc2_remote.setLocalDescription(pc2_remote.SDP_ANSWER, answer);
+		  	  sendMessage({type: 'answer', sdp: answer.toSdp()});
+		  	  pc2_remote.startIce();
+		  	}
+	    else{
+	  		var offer = pc.remoteDescription;
+	  	    var answer = pc.createAnswer(offer.toSdp(), {audio:true,video:true});
+	  	    pc.setLocalDescription(pc.SDP_ANSWER, answer);
+	  	    sendMessage({type: 'answer', sdp: answer.toSdp()});
+	  	    pc.startIce();
 	    }
-	  }
+	}
 
-
-  
   function onChannelOpened() {
-    console.log('Channel opened for channel 1.');
-    channelReady = true;
-    if (initiator) maybeStart();
-  }
-  function onChannelMessage(message) {
-    console.log('S->C: ' + message.data);
-    processSignalingMessage(message.data);
-    imReceiveMessage(message.data);
-  }
-  function onAnotherChannelOpened() {
-	    console.log('Channel opened for channel 2.');
+	    console.log('Channel opened for channel 1.');
 	    channelReady = true;
-	    if (initiator) maybeStart();
-	  }
-  function onAnotherChannelMessage(message) {
+	    }
+	  function onChannelMessage(message) {
 	    console.log('S->C: ' + message.data);
-	    processAnotherSignalingMessage(message.data);
-	    imReceiveMessage(message.data);
+	    processSignalingMessage(message.data);
 	  }
-  function onChannelError() {
-    console.log('Channel error for channel 1.');
-  }
-  function onChannelClosed() {
-    console.log('Channel closed for channel 1.');
-  }
-
-  function onUserMediaSuccess(stream) {
-    console.log("User has granted access to local media for channel 1.");
-    btn1.disabled = true;
-    btn2.disabled = true;
-    var url = webkitURL.createObjectURL(stream);
-    vid1.src = url;
-    localStream = stream;
-    // Caller creates PeerConnection.
-    if (initiator) maybeStart();
-  }
-  function onUserMediaError(error) {
-    console.log("Failed to get access to local media. Error code was " + error.code + "for channel 1");
-    alert("Failed to get access to local media. Error code was " + error.code + "for channel 1.");
-  }
-  function onIceCandidate(candidate, moreToFollow) {
-	    if (candidate) {
-	        sendMessage({type: 'candidate',
-	                     label: candidate.label, candidate: candidate.toSdp()});
-	    }
-
-	    if (!moreToFollow) {
-	      console.log("End of candidates for channel 1.");
-	    }
-	  }
-  
-  function onAnotherIceCandidate(candidate, moreToFollow) {
-	    if (candidate) {
-	        sendMessage({type: 'candidate',
-	                     label: candidate.label, candidate: candidate.toSdp()});
-	    }
-
-	    if (!moreToFollow) {
-	      console.log("End of candidates for channel 1.");
-	    }
-	  }
-
-  
-  /* default ice setting
-  function onIceCandidate(candidate, moreToFollow) {
-    if (candidate) {
-        sendMessage({type: 'candidate',
-                     label: candidate.label, candidate: candidate.toSdp()});
-    }
-
-    if (!moreToFollow) {
-      console.log("End of candidates for channel 1.");
-    }
-  }
-
-*/
-  function onSessionConnecting(message) {
+function onChannelError() {
+		    console.log('Channel error for channel 1.');
+		  }
+function onChannelClosed() {
+		    console.log('Channel closed for channel 1.');
+		  }
+function onSessionConnecting(message) {
     console.log("Session connecting for channel 1.");
   }
   function onSessionOpened(message) {
     console.log("Session opened for channel 1.");
   }
+  
+function hangup() {
+  trace("Ending calls");
+  pc1_local.close(); 
+  pc1_remote.close();
+  pc2_local.close();
+  pc2_remote.close();
+  pc1_local = pc1_remote = null;
+  pc2_local = pc2_remote = null;
+  btn3.disabled = true;
+  btn2.disabled = false;
+  started = false;
+}
 
-  function onRemoteStreamAdded(event) {
-	  if(no_of_occupants >= 2){  
-    console.log("Remote stream added for channel 1.");
-    var url = webkitURL.createObjectURL(event.stream);
-    vid2.src = url;
-    //waitForRemoteVideo();
-	  }else{
-	console.log("Remote stream added for channel 2.");
-	var url = webkitURL.createObjectURL(event.stream);
-    vid3.src = url;
-	//waitForRemoteVideo();	  
-	  }
-  }
-  function onRemoteStreamRemoved(event) {
+function gotRemoteStream1(e){
+  vid2.src = webkitURL.createObjectURL(e.stream);
+  trace("PC1: Received remote stream");
+}
+function onRemoteStreamRemoved(event) {
     console.log("Remote stream removed for channel 1.");
   }
 
-  function onHangup() {
-    console.log("Hanging up for channel 1.");
-    started = false;    // Stop processing any message
-    //transitionToDone();
-    pc.close();
-    // will trigger BYE from server
-    socket.close();
-    pc = null;
-    //socket = null;
-  }
-   
-  function onRemoteHangup() {
-    console.log('Session terminated for channel 1.');
-    started = false;    // Stop processing any message
-    //transitionToWaiting();
-    pc.close();
-    pc = null;
-    initiator = 0;
-    btn3.disabled = true;
-    btn2.disabled = false;
-  }
+function gotRemoteStream2(e){
+  vid3.src = webkitURL.createObjectURL(e.stream);
+  trace("PC2: Received remote stream");
+}
 
-  function waitForRemoteVideo() {
-    if (vid2.currentTime > 0) {
-      //transitionToActive();
-    } else {
-      setTimeout(waitForRemoteVideo, 100);
+
+function iceCallback1Local(candidate,moreToFollow){
+	if (candidate) {
+        sendMessage({type: 'candidate',
+                     label: candidate.label, candidate: candidate.toSdp()});
     }
-  }
- /* 
-function transitionToActive() {
-    remoteVideo.style.opacity = 1;
-    card.style.webkitTransform = "rotateY(180deg)";
-    setTimeout(function() { localVideo.src = ""; }, 500);
-    setTimeout(function() { miniVideo.style.opacity = 1; }, 1000);
-    setStatus("<input type=\"button\" id=\"hangup\" value=\"Hang up\" onclick=\"onHangup()\" />"); }
-*/
-/*
-  function transitionToWaiting() {
-    card.style.webkitTransform = "rotateY(0deg)";
-    setTimeout(function() { localVideo.src = miniVideo.src; miniVideo.src = ""; remoteVideo.src = "" }, 500);
-    miniVideo.style.opacity = 0;
-    remoteVideo.style.opacity = 0;
-    resetStatus();
-  }
-  function transitionToDone() {
-    localVideo.style.opacity = 0;
-    remoteVideo.style.opacity = 0;
-    miniVideo.style.opacity = 0;
-    setStatus("You have left the call. <a href=\"{{ room_link }}\">Click here</a> to rejoin.");
-  }
-  function enterFullScreen() {
-    remote.webkitRequestFullScreen();
-  }
-*/
-  
 
-  function imSendMessage() {
-    var message = new FormData();
-    message.append('ta2', '&lt;im&gt;' + ta2.value + '&lt;\im&gt;');
-    //var message = ta2.value; 
-    var msgString = message;
-    //var msgString = JSON.stringify(message);
-    console.log('C->S: ' + msgString);
-    path = '/imsendmessage?r={{ room_key }}' + '&u={{ me }}';
+    if (!moreToFollow) {
+      console.log("End of candidates for iceCallback1Local.");
+    }
+}
+      
+function iceCallback1Remote(candidate,moreToFollow){
+	if (candidate) {
+        sendMessage({type: 'candidate',
+                     label: candidate.label, candidate: candidate.toSdp()});
+    }
+
+    if (!moreToFollow) {
+      console.log("End of candidates for iceCallback1Remote.");
+    }
+    
+}
+
+function iceCallback2Local(candidate,moreToFollow){
+	if (candidate) {
+        sendMessage({type: 'candidate',
+                     label: candidate.label, candidate: candidate.toSdp()});
+    }
+
+    if (!moreToFollow) {
+      console.log("End of candidates for iceCallback2Local.");
+    }
+    
+}
+      
+function iceCallback2Remote(candidate,moreToFollow){
+	if (candidate) {
+        sendMessage({type: 'candidate',
+                     label: candidate.label, candidate: candidate.toSdp()});
+    }
+
+    if (!moreToFollow) {
+      console.log("End of candidates for iceCallback2Remote.");
+    }
+    
+}
+
+function handleCandidate(candidate, dest, prefix, type) {
+  if (candidate) {
+    dest.processIceMessage(candidate);
+    trace(prefix + "New " + type + " ICE candidate: " + candidate.toSdp());
+  }
+}
+
+/**EXTEND TO THREE USERS
+ * 
+ */
+ 
+ var  addUser = function (){
+	 	//thirdUserFlag = true;
+	 if((no_of_occupant == 2 || no_of_occupant == 3) && (getThirdUserFlag() && !runbefore)){
+		 runbefore = true;
+	 	try {		  
+			  pc2_local = new webkitPeerConnection00("{{ pc_config }}", iceCallback2Local);
+			  pc2_remote = new webkitPeerConnection00("{{ pc_config }}", iceCallback2Remote);
+			  trace("PC2: created local and remote peer connection objects");
+			   } catch (e) {
+			     console.log("Failed to create PeerConnection, exception: " + e.message);
+			     alert("Cannot create PeerConnection object; Is the 'PeerConnection' flag enabled in about:flags?");
+			     return;
+			   }
+			   
+			    
+		 	//pc2_local.onaddstream = gotRemoteStream2; 
+			pc2_local.onconnecting = onSessionConnecting;
+			pc2_local.onopen = onSessionOpened;
+		    pc2_local.onremovestream = onRemoteStreamRemoved;
+			
+		    //pc2_remote.onaddstream = gotRemoteStream2; 
+			pc2_remote.onconnecting = onSessionConnecting;
+			pc2_remote.onopen = onSessionOpened;
+		    pc2_remote.onremovestream = onRemoteStreamRemoved;
+	 
+	  
+
+	  signal(pc2_local, pc2_remote, "PC2: ");
+	  }
+	};
+	
+	setInterval(addUser, 7000);
+
+function getThirdUserFlag(){
+	console.log('C->S: getThirduserflag');
+    path = '/occupants?r={{ room_key }}';
     var xhr = new XMLHttpRequest();
     //xhr.responseType = 'text';
     xhr.open('POST', path, true);
-    xhr.send(msgString);
-  }
-  
-  function imReceiveMessage(message) {
-  message = message.substr(4, -5);
-  ta2.value = message;
-  };
+        
+    xhr.onreadystatechange=function()
+	{ 
+		if(xhr.readyState == 4)
+		{
+			    	    //alert('xhr status = ' + xhr.status);
+		if(xhr.status == 200 || xhr.status == 0)
+			{
+				var current_no_of_occupants = xhr.responseText;
+				if(current_no_of_occupants== 3){
+				 thirdUserFlag = true;}else{thirdUserFlag = false;}
+			    
+			   }	
+			else	
+			{
+				console.log("Error: returned status code " + xhr.status + " " + xhr.statusText);
+			}	
+		}
+	}; 
+	xhr.send();
+	
+	return thirdUserFlag;
+}
 
-  
 </script>
-
-
 </body>
 </html>
+
+
