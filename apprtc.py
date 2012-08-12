@@ -206,8 +206,6 @@ class MainPage(webapp.RequestHandler):
       room = Room(key_name = room_key)
       room.add_user(user)
       
-      #mike - autoincrement initiator FOR THIS USER **newly added
-      #initiator += 1
             
       if debug != "loopback":
         #mike - change initiator to +=1
