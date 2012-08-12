@@ -126,15 +126,14 @@ class OccupantsNumber(webapp.RequestHandler):
   def post(self):
       room_key = self.request.get('r')
       room = Room.get_by_key_name(room_key)
-      no_of_occupants = room.usercount 
-      template_values = {
-                         'no_of_occupants': no_of_occupants,
-                       }
-      path = os.path.join(os.path.dirname(__file__), 'index.html')
-      self.response.out.write(template.render(path, template_values))
-
-      logging.info('No of occupants in the room = ' + no_of_occupants)
-    
+      no_of_occupant = room.usercount 
+      #template_values = {
+      #                  'no_of_occupant': no_of_occupant,
+      #                 }
+      #path = os.path.join(os.path.dirname(__file__), 'index.html')
+      self.response.out.write(no_of_occupant)
+      logging.info('No of occupants in the room: ' + str(no_of_occupant))
+          
 class DisconnectPage(webapp.RequestHandler):
   def post(self):
     key = self.request.get('from')
@@ -208,7 +207,7 @@ class MainPage(webapp.RequestHandler):
       room.add_user(user)
       
       #mike - autoincrement initiator FOR THIS USER **newly added
-      initiator += 1
+      #initiator += 1
             
       if debug != "loopback":
         #mike - change initiator to +=1
@@ -217,7 +216,7 @@ class MainPage(webapp.RequestHandler):
       else:
         room.add_user(user)
         #mike - autoincrement initiator
-        initiator += 1
+        initiator = 1
         
         #swap nextline with below
     #elif room and room.get_occupancy() == 1 and debug != "full":
@@ -235,7 +234,7 @@ class MainPage(webapp.RequestHandler):
       logging.info('Room ' + room_key + ' is full');
       return
 
-    no_of_occupants = room.usercount 
+    no_of_occupant = room.usercount 
     room_link = 'https://apprtc.appspot.com/?r=' + room_key
     if debug:
       room_link += ('&debug=' + debug)
@@ -263,7 +262,7 @@ class MainPage(webapp.RequestHandler):
                        'room_link': room_link,
                        'other_room_no': other_room_no,
                        'initiator': initiator,
-                       'no_of_occupants': no_of_occupants,
+                       'no_of_occupant': no_of_occupant,
                        'pc_config': pc_config
                       }
     path = os.path.join(os.path.dirname(__file__), 'index.html')
